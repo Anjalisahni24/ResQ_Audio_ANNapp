@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.EmergencyAudioDetection" parent="Theme.AppCompat.Light.NoActionBar">
+        <!-- You can add custom styling here -->
+    </style>
+</resources>

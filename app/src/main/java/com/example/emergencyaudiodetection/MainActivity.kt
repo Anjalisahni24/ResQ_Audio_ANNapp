@@ -213,12 +213,22 @@ class MainActivity : AppCompatActivity() {
 
     private fun showConfirmationDialog() {
         userResponded = false
+
         AlertDialog.Builder(this)
             .setTitle("Emergency Sound Detected")
             .setMessage("Do you need help?")
-            .setPositiveButton("Yes, send alert") @androidx.annotation.RequiresPermission(allOf = [android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION]) { _, _ ->
+            .setPositiveButton("Yes, send alert") { _, _ ->
                 userResponded = true
-                sendEmergencySMS()
+
+                // Runtime permission check
+                if (
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                ) {
+                    sendEmergencySMS()
+                } else {
+                    Toast.makeText(this, "Location permission not granted", Toast.LENGTH_SHORT).show()
+                }
             }
             .setNegativeButton("No, false alarm") { _, _ ->
                 userResponded = true
@@ -227,6 +237,7 @@ class MainActivity : AppCompatActivity() {
             .setCancelable(false)
             .show()
     }
+
 
     @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
     private fun sendEmergencySMS() {

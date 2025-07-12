@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#d5e29f"
+    android:padding="24dp">
+
+    <!-- LOGO REMOVED -->
+
+    <!-- TITLE -->
+    <TextView
+        android:id="@+id/headerTitle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="100dp"
+        android:text="Emergency Audio Detection"
+        android:textSize="29sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF"
+        android:fontFamily="sans-serif" />
+
+    <!-- START BUTTON -->
+    <Button
+        android:id="@+id/recordButton"
+        android:layout_width="250dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_marginStart='175dp'
+        android:layout_marginLeft="175dp"
+        android:layout_below="@id/headerTitle"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="120dp"
+        android:text="START LISTENING"
+        android:textSize="25sp"
+        android:textColor="#FFFFFF"
+        android:background="@drawable/btn_shape_enabled" />
+
+
+
+    <!-- DISCLAIMER -->
+    <TextView
+        android:id="@+id/disclaimerText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:text="⚠ This app listens for emergency sounds. No audio is stored or shared."
+        android:textColor="#BDBDBD"
+        android:textSize="15sp"
+        android:textAlignment="center"
+        android:padding="20dp" />
+
+</RelativeLayout>

@@ -35,6 +35,9 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
+    aaptOptions {
+        noCompress += "tflite"
+    }
 
     // REMOVE buildFeatures.compose if you're not using Compose
 }

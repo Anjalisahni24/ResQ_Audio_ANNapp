@@ -8,23 +8,19 @@
 
     <TextView
         android:id="@+id/headerTitle"
-        android:layout_width="match_parent"
-        android:layout_height="601dp"
-        android:layout_alignParentTop="true"
-        android:layout_marginTop="76dp"
-        android:background="@color/white"
-        android:backgroundTint="#FFFFFF"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_marginTop="100dp"
         android:text="Emergency Audio Detection"
-        android:textAlignment="center"
-        android:textColor="#000000"
-        android:textSize="24sp"
+        android:textSize="29sp"
         android:textStyle="bold"
-        android:typeface="serif"
-        android:visibility="visible" />
+        android:textColor="#080808"
+        android:fontFamily="sans-serif" />
 
     <Button
         android:id="@+id/recordButton"
-        android:layout_width="171dp"
+        android:layout_width="200dp"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:layout_marginStart="110dp"
@@ -41,14 +37,13 @@
 
     <TextView
         android:id="@+id/disclaimerText"
-        android:layout_width="370dp"
-        android:layout_height="187dp"
-        android:layout_marginLeft="40dp"
-        android:layout_marginTop="460dp"
-        android:layout_marginRight="40dp"
-        android:fontFamily="sans-serif-medium"
-        android:text="Disclaimer : This application continuously monitors ambient sound using your device's microphone to detect emergency sounds such as sirens, alarms, or distress calls. Mic is used to detect emergency sounds. No audio is stored or sent. "
-        android:textColor="#888888"
-        android:textSize="12sp" />
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:text="⚠ This app listens for emergency sounds. No audio is stored or shared."
+        android:textColor="#e0af1f"
+        android:textSize="15sp"
+        android:textAlignment="center"
+        android:padding="20dp" />
 
 </RelativeLayout>

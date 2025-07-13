@@ -35,6 +35,18 @@
         android:text="Start Recording"
         android:textSize="16sp" />
 
+    <Button
+        android:id="@+id/manageContactsButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Manage Emergency Contacts"
+        android:layout_marginTop="500dp"
+        android:layout_marginRight = "110dp"
+        android:layout_marginLeft = "110dp"
+        android:layout_gravity="center_horizontal"
+        />
+
+
     <TextView
         android:id="@+id/disclaimerText"
         android:layout_width="match_parent"

@@ -1,6 +1,7 @@
 package com.example.emergencyaudiodetection
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.media.AudioFormat
@@ -27,6 +28,7 @@ import java.util.*
 class MainActivity : AppCompatActivity() {
 
     private lateinit var recordButton: Button
+    private lateinit var manageContactsButton: Button
     private var isRecording = false
     private lateinit var yamnetInterpreter: Interpreter
     private lateinit var annInterpreter: Interpreter
@@ -35,7 +37,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var requestPermissionLauncher: ActivityResultLauncher<Array<String>>
     private lateinit var fusedLocationClient: FusedLocationProviderClient
 
-    private val emergencyContacts = listOf("9417178231", "6283606024")
     private val smsManager: SmsManager = SmsManager.getDefault()
     private var userResponded = false
 
@@ -50,6 +51,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         recordButton = findViewById(R.id.recordButton)
+        manageContactsButton = findViewById(R.id.manageContactsButton)
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         setupPermissionLauncher()
@@ -61,6 +63,10 @@ class MainActivity : AppCompatActivity() {
             } else {
                 stopRecording()
             }
+        }
+
+        manageContactsButton.setOnClickListener {
+            startActivity(Intent(this, ContactManagerActivity::class.java))
         }
     }
 
@@ -81,7 +87,6 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.ACCESS_FINE_LOCATION,
                 Manifest.permission.SEND_SMS,
                 Manifest.permission.READ_CONTACTS
-
             )
         )
     }
@@ -127,7 +132,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun processAudio() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
             Toast.makeText(this, "Microphone permission not granted", Toast.LENGTH_SHORT).show()
             return
         }
@@ -164,12 +171,14 @@ class MainActivity : AppCompatActivity() {
 
                 if (read > 0) {
                     val floatBuffer = FloatArray(read) { i -> audioBuffer[i] / 32767.0f }
+                    Log.d("AudioDebug", "Read $read samples")
+                    Log.d("AudioDebug", "First 10 samples: ${floatBuffer.take(10).joinToString()}")
+
                     val prediction = runInference(floatBuffer)
 
                     runOnUiThread {
                         if (prediction == "emergency") {
                             showConfirmationDialog()
-
                             handler.postDelayed({
                                 if (!userResponded && checkLocationPermissions()) {
                                     try {
@@ -194,32 +203,28 @@ class MainActivity : AppCompatActivity() {
 
     private fun runInference(audioInput: FloatArray): String {
         return try {
-            val yamnetInput = arrayOf(audioInput.copyOf(15360)) // input shape: [1,15360]
-            val embeddingOutput = Array(1) { FloatArray(1024) }  // output shape: [1,1024]
+            Log.d("DEBUG", "Inside runInference()")
+            val yamnetInput = arrayOf(audioInput.copyOf(15360))
+            val embeddingOutput = Array(1) { FloatArray(1024) }
             yamnetInterpreter.run(yamnetInput, embeddingOutput)
 
-            val classifierInput = arrayOf(embeddingOutput[0])   // shape: [1,1024]
-            val classifierOutput = Array(1) { FloatArray(2) }    // ANN output [1,2] (non-emergency, emergency)
+            val classifierInput = arrayOf(embeddingOutput[0])
+            val classifierOutput = Array(1) { FloatArray(1) }
 
             annInterpreter.run(classifierInput, classifierOutput)
 
-            // 🔍 Log the confidence score for emergency
-            val emergencyConfidence = classifierOutput[0][1]  // index 1 = emergency
+            val emergencyConfidence = classifierOutput[0][0]
             Log.d("ConfidenceScore", "Emergency confidence: $emergencyConfidence")
 
-            val maxIdx = classifierOutput[0].indices.maxByOrNull { classifierOutput[0][it] } ?: -1
-
-            if (maxIdx == 1) "emergency" else "non-emergency"
+            if (emergencyConfidence > 0.5f) "emergency" else "non-emergency"
         } catch (e: Exception) {
             Log.e("InferenceError", e.message ?: "Unknown inference error")
             "error"
         }
     }
 
-
     private fun showConfirmationDialog() {
         userResponded = false
-
         AlertDialog.Builder(this)
             .setTitle("Emergency Sound Detected")
             .setMessage("Do you need help?")
@@ -250,8 +255,17 @@ class MainActivity : AppCompatActivity() {
                 PackageManager.PERMISSION_GRANTED
     }
 
-    @RequiresPermission(allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION])
+    @RequiresPermission(
+        allOf = [Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION]
+    )
     private fun sendEmergencySMS() {
+        val prefs = getSharedPreferences("emergency_contacts", MODE_PRIVATE)
+        val emergencyContacts = listOfNotNull(
+            prefs.getString("contact1", null),
+            prefs.getString("contact2", null),
+            prefs.getString("contact3", null)
+        ).filter { it.isNotBlank() }
+
         fusedLocationClient.lastLocation.addOnSuccessListener { location: Location? ->
             if (location != null) {
                 val message = """

@@ -1,4 +1,5 @@
-package com.example.emergencyaudiodetection
+package com.example.emergencyaudiodetection.contact
+
 
 import android.content.SharedPreferences
 import android.os.Bundle
@@ -6,8 +7,9 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
+import com.example.emergencyaudiodetection.R
 
-class ContactManagerActivity : AppCompatActivity() {
+class ManageContactsActivity : AppCompatActivity() {
 
     private lateinit var contact1Field: EditText
     private lateinit var contact2Field: EditText

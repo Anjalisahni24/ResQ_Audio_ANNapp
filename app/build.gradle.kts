@@ -1,3 +1,12 @@
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
+}
+
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -13,7 +22,6 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
-
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -35,29 +43,26 @@ android {
     kotlinOptions {
         jvmTarget = "11"
     }
-    aaptOptions {
-        noCompress += "tflite"
-    }
-
-    // REMOVE buildFeatures.compose if you're not using Compose
 }
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("com.google.android.material:material:1.12.0")
+    implementation(fileTree("libs") {
+        include("*.jar")
+    })
+    implementation("com.google.android.gms:play-services-location:21.0.1")
+    implementation("androidx.activity:activity-ktx:1.8.2")
 
-    testImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
-    implementation ("org.tensorflow:tensorflow-lite:2.11.0")
-    implementation ("com.google.android.gms:play-services-location:21.0.1")
-    implementation ("org.tensorflow:tensorflow-lite:2.11.0")
-    implementation ("org.tensorflow:tensorflow-lite-support:0.3.1")
+    // TensorFlow Lite
     implementation("org.tensorflow:tensorflow-lite:2.11.0")
     implementation("org.tensorflow:tensorflow-lite-support:0.4.2")
     implementation("org.tensorflow:tensorflow-lite-task-audio:0.4.2")
-    implementation ("androidx.activity:activity-ktx:1.8.2")
 
-
+    // Testing
+    testImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
+    androidTestImplementation("androidx.test.espresso:espresso-core:3.5.1")
 }
+

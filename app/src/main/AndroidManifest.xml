@@ -33,7 +33,8 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".ContactManagerActivity" />
+        <activity android:name=".contact.ManageContactsActivity" />
+
     </application>
 
 </manifest>

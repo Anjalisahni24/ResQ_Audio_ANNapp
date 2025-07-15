@@ -47,7 +47,8 @@ class ManageContactsActivity : AppCompatActivity() {
             val contact4 = contact4Field.text.toString().trim()
             val contact5 = contact5Field.text.toString().trim()
 
-            val contacts = listOf(contact1, contact2, contact3)
+            val contacts = listOf(contact1, contact2, contact3, contact4, contact5)
+                .filter { it.isNotEmpty() } // Only filled numbers
 
             // Validate contacts: must be either blank or 10 digits
             val invalidContacts = contacts.filter {
@@ -59,16 +60,25 @@ class ManageContactsActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
-            // Save to SharedPreferences
+            // Save the set to the SAME preferences as MainActivity expects!
+            val mainPrefs = getSharedPreferences("EmergencyContacts", MODE_PRIVATE)
+            mainPrefs.edit()
+                .putStringSet("contacts", HashSet(contacts))
+                .apply()
+
+            // Optional: Save each individually if you want to pre-fill fields on future opens
             with(prefs.edit()) {
                 putString("contact1", contact1)
                 putString("contact2", contact2)
                 putString("contact3", contact3)
+                putString("contact4", contact4)
+                putString("contact5", contact5)
                 apply()
             }
 
             Toast.makeText(this, "Contacts saved successfully", Toast.LENGTH_SHORT).show()
-            finish() // close and return to previous activity
+            finish()
         }
+
     }
 }

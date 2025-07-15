@@ -1,10 +1,10 @@
 package com.example.emergencyaudiodetection
 
 import android.Manifest
-import android.telephony.SmsManager
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.*
+import android.telephony.SmsManager
 import android.util.Log
 import android.widget.Button
 import android.widget.Toast
@@ -14,30 +14,41 @@ import be.tarsos.dsp.AudioDispatcher
 import be.tarsos.dsp.AudioEvent
 import be.tarsos.dsp.AudioProcessor
 import be.tarsos.dsp.io.android.AudioDispatcherFactory
+import com.example.emergencyaudiodetection.contact.ManageContactsActivity
+import com.google.android.gms.location.LocationServices
+import kotlinx.coroutines.*
 import org.tensorflow.lite.Interpreter
 import java.io.FileInputStream
 import java.io.IOException
 import java.nio.MappedByteBuffer
 import java.nio.channels.FileChannel
-import kotlin.concurrent.thread
-import com.example.emergencyaudiodetection.contact.ManageContactsActivity
-
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var recordToggleButton: Button
-
     private lateinit var manageContactsButton: Button
 
     private var dispatcher: AudioDispatcher? = null
     private var isRecording = false
-    private lateinit var tflite: Interpreter
-    private lateinit var yamnet: Interpreter
+    private var tflite: Interpreter? = null
+    private var yamnet: Interpreter? = null
 
+    private var alertDialog: android.app.AlertDialog? = null
+    private var autoSendAlertHandler: Handler? = null
+    private var autoSendAlertRunnable: Runnable? = null
+    private val confidenceWindow = ArrayDeque<Float>() // ✅ ADDED: For smoothing
+    private val smoothingWindowSize = 5
+
+
+    private val coroutineScope = CoroutineScope(Dispatchers.IO)
 
     companion object {
         private const val SAMPLE_RATE = 16000
+        private const val INPUT_LENGTH = 15600
+        private const val YAMNET_EMBEDDING_SIZE = 1024
+        private const val CONFIDENCE_THRESHOLD = 0.8f
         private const val PERMISSION_REQUEST_CODE = 100
+        private const val AUTO_SEND_DELAY_MS = 10000L // 10 seconds
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -50,19 +61,13 @@ class MainActivity : AppCompatActivity() {
         recordToggleButton.setOnClickListener {
             if (!isRecording) {
                 startRecording()
-                recordToggleButton.text = getString(R.string.stop_listening)
-
             } else {
                 stopRecording()
-                recordToggleButton.text = getString(R.string.start_listening)
             }
         }
 
-
         manageContactsButton.setOnClickListener {
-            val intent = Intent(this, ManageContactsActivity::class.java)
-
-            startActivity(intent)
+            startActivity(Intent(this, ManageContactsActivity::class.java))
         }
 
         if (!hasAllPermissions()) {
@@ -78,14 +83,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         try {
-            tflite = Interpreter(loadModelFile("emergency_audio_model.tflite"))     // Classifier
-            yamnet = Interpreter(loadModelFile("YamNet.tflite"))                // Feature extractor
-            /*val outputTensorShape = yamnet.getOutputTensor(1).shape()
-            Log.d("YAMNetDebug", "Output Tensor Shape: ${outputTensorShape.joinToString()}")*/
+            yamnet = Interpreter(loadModelFile("yamnet_embedding.tflite"))
+            tflite = Interpreter(loadModelFile("emergency_audio_model.tflite"))
+            // Log the input tensor shape
+            val inputShape = yamnet!!.getInputTensor(0).shape()
+            // E.g., [15600] or [1, 15600]
+            Log.d("YAMNetOutputShape", yamnet!!.getOutputTensor(0).shape().joinToString())
+            Log.d("ClassifierInputShape", tflite!!.getInputTensor(0).shape().joinToString())
+            Log.d("ClassifierOutputShape", tflite!!.getOutputTensor(0).shape().joinToString())
+
 
         } catch (e: IOException) {
-            Toast.makeText(this, "Model failed to load", Toast.LENGTH_LONG).show()
-            Log.e("ModelLoad", "Error loading model", e)
+            Log.e("ModelInit", "Failed to load model", e)
+            Toast.makeText(this, "Model loading error!", Toast.LENGTH_LONG).show()
         }
     }
 
@@ -95,152 +105,140 @@ class MainActivity : AppCompatActivity() {
                 ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
     }
 
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSION_REQUEST_CODE) {
-            if (!hasAllPermissions()) {
-                Toast.makeText(this, "Permissions denied!", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
     private fun loadModelFile(modelName: String): MappedByteBuffer {
-        val fileDescriptor = assets.openFd(modelName)
-        val inputStream = FileInputStream(fileDescriptor.fileDescriptor)
-        val fileChannel = inputStream.channel
-        val startOffset = fileDescriptor.startOffset
-        val declaredLength = fileDescriptor.declaredLength
-        return fileChannel.map(FileChannel.MapMode.READ_ONLY, startOffset, declaredLength)
+        assets.openFd(modelName).apply {
+            return FileInputStream(fileDescriptor).channel.map(
+                FileChannel.MapMode.READ_ONLY,
+                startOffset,
+                declaredLength
+            )
+        }
     }
 
     private fun startRecording() {
         if (!hasAllPermissions()) {
-            Toast.makeText(this, "Permissions are required to start recording.", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "Missing permissions.", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (yamnet == null || tflite == null) {
+            Toast.makeText(this, "Models not loaded!", Toast.LENGTH_LONG).show()
             return
         }
 
-        Log.d("Recording", "Starting recording")
-
+        Log.d("Recording", "Start recording")
         dispatcher = AudioDispatcherFactory.fromDefaultMicrophone(SAMPLE_RATE, 15360, 7680)
 
         dispatcher?.addAudioProcessor(object : AudioProcessor {
             override fun processingFinished() {}
 
-            override fun process(audioEvent: AudioEvent): Boolean {
-                try {
-                    val audioBuffer = audioEvent.floatBuffer
-                    val inputLength = 15600
-
-                    val yamnetInput = Array(1) { FloatArray(inputLength) }
-                    for (i in 0 until inputLength) {
-                        yamnetInput[0][i] = if (i < audioBuffer.size) audioBuffer[i] else 0f
+            override fun process(audioEvent: AudioEvent): Boolean = try {
+                val audioBuffer = audioEvent.floatBuffer
+                val yamnetInput = FloatArray(INPUT_LENGTH)
+                for (i in audioBuffer.indices) {
+                    if (i < INPUT_LENGTH) {
+                        yamnetInput[i] = audioBuffer[i]
                     }
-
-                    // Use output index 1 to get embeddings from YamNet
-                    val yamnetOutputMap = mutableMapOf<Int, Any>()
-                    val embeddings = Array(96) { FloatArray(1024) } // shape: [96, 1024]
-                    yamnetOutputMap[1] = embeddings
-
-                    yamnet.runForMultipleInputsOutputs(yamnetInput, yamnetOutputMap)
-
-                    // Mean-pool embeddings to get [1, 1024]
-                    val pooledEmbedding = FloatArray(1024)
-                    for (i in 0 until 96) {
-                        for (j in 0 until 1024) {
-                            pooledEmbedding[j] += embeddings[i][j]
-                        }
-                    }
-                    for (j in 0 until 1024) {
-                        pooledEmbedding[j] /= 96f
-                    }
-
-                    // Feed to classifier
-                    val classifierInput = arrayOf(pooledEmbedding)
-                    val classifierOutput = Array(1) { FloatArray(1) }
-
-                    tflite.run(classifierInput, classifierOutput)
-
-                    val confidence = classifierOutput[0][0]
-                    Log.d("InferenceOutput", "Confidence: $confidence")
-
-                    if (confidence > 0.5) {
-                        runOnUiThread {
-                            Toast.makeText(applicationContext, "🚨 Emergency Sound Detected!", Toast.LENGTH_SHORT).show()
-                        }
-                        triggerAlert()
-                    }
-
-                } catch (e: Exception) {
-                    Log.e("YAMNetError", "Error in inference", e)
                 }
 
-                return true
+// Output depends on your model's output shape (likely [1, 1024])
+                // Get the embedding
+                val embeddingOutput = FloatArray(1024)
+                yamnet?.run(yamnetInput, embeddingOutput)
+
+// Wrap embeddingOutput for classifier (batch of 1)
+                val classifierInput = arrayOf(embeddingOutput)
+                val classifierOutput = Array(1) { FloatArray(1) }
+                tflite?.run(classifierInput, classifierOutput)
+                val confidence = classifierOutput[0][0]
+                Log.d("InferenceOutput", "Confidence: $confidence")
+
+// ✅ ADD CONFIDENCE SMOOTHING
+                confidenceWindow.addLast(confidence)
+                if (confidenceWindow.size > smoothingWindowSize) {
+                    confidenceWindow.removeFirst()
+                }
+                val avgConfidence = confidenceWindow.average().toFloat()
+                Log.d("InferenceOutput", "Smoothed Confidence: $avgConfidence")
+
+                if (avgConfidence > CONFIDENCE_THRESHOLD) {
+                    runOnUiThread {
+                        Toast.makeText(applicationContext, "🚨 Emergency Sound Detected!", Toast.LENGTH_SHORT).show()
+                        if (alertDialog?.isShowing != true) {
+                            triggerAlert()
+                        }
+                    }
+                }
+
+                true
+            } catch (e: Exception) {
+                Log.e("InferenceError", "YAMNet failed:", e)
+                true
             }
-
-
-
         })
 
         isRecording = true
-        thread { dispatcher?.run() }
+        coroutineScope.launch {
+            dispatcher?.run()
+        }
 
+        recordToggleButton.text = getString(R.string.stop_listening)
         Toast.makeText(this, "Recording started", Toast.LENGTH_SHORT).show()
     }
-
 
     private fun stopRecording() {
         isRecording = false
         dispatcher?.stop()
         dispatcher = null
         recordToggleButton.text = getString(R.string.start_listening)
-
         Toast.makeText(this, "Recording stopped", Toast.LENGTH_SHORT).show()
+        dismissAlertDialog()
     }
 
-
     private fun triggerAlert() {
-        runOnUiThread {
-            val alertDialog = android.app.AlertDialog.Builder(this)
-                .setTitle("🚨 Emergency Detected")
-                .setMessage("Emergency detected! Do you want to send alert?")
-                .setCancelable(false)
-                .setPositiveButton("Yes") { _, _ ->
-                    sendAlert()
-                }
-                .setNegativeButton("No") { _, _ ->
-                    Toast.makeText(this, "Alert cancelled.", Toast.LENGTH_SHORT).show()
-                }
-                .create()
+        alertDialog = android.app.AlertDialog.Builder(this)
+            .setTitle("🚨 Emergency Detected")
+            .setMessage("Emergency detected! Send alert to your contacts?")
+            .setCancelable(false)
+            .setPositiveButton("Yes") { _, _ -> sendAlert() }
+            .setNegativeButton("No") { _, _ ->
+                Toast.makeText(this, "Alert cancelled.", Toast.LENGTH_SHORT).show()
+            }
+            .create()
 
-            alertDialog.show()
+        alertDialog?.show()
 
-            // Auto-send alert if user doesn't respond in 10 seconds
-            Handler(Looper.getMainLooper()).postDelayed({
-                if (alertDialog.isShowing) {
-                    alertDialog.dismiss()
-                    sendAlert()
-                }
-            }, 10000) // 10 seconds
+        // Auto-send if no response
+        autoSendAlertHandler = Handler(Looper.getMainLooper())
+        autoSendAlertRunnable = Runnable {
+            if (alertDialog?.isShowing == true) {
+                alertDialog?.dismiss()
+                sendAlert()
+            }
         }
+        autoSendAlertHandler?.postDelayed(autoSendAlertRunnable!!, AUTO_SEND_DELAY_MS)
+    }
+
+    private fun dismissAlertDialog() {
+        autoSendAlertHandler?.removeCallbacks(autoSendAlertRunnable ?: return)
+        alertDialog?.dismiss()
     }
 
     private fun sendAlert() {
         val sharedPreferences = getSharedPreferences("EmergencyContacts", MODE_PRIVATE)
-        val contactSet = sharedPreferences.getStringSet("contacts", setOf()) ?: setOf()
+        val contactSet = HashSet(sharedPreferences.getStringSet("contacts", emptySet()) ?: emptySet())
+
+        Log.d("ContactsDebug", "Loaded contacts: $contactSet") // ✅ Helps debug
+
 
         if (contactSet.isEmpty()) {
-            Toast.makeText(this, "No emergency contacts found!", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No emergency contacts saved.", Toast.LENGTH_SHORT).show()
             return
         }
 
-        var locationText = "Location not available"
+        var locationText = "Location unavailable"
 
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) == PackageManager.PERMISSION_GRANTED
-        ) {
-            val fusedLocationClient = com.google.android.gms.location.LocationServices.getFusedLocationProviderClient(this)
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+            val fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
             fusedLocationClient.lastLocation.addOnSuccessListener { location ->
                 location?.let {
                     locationText = "https://maps.google.com/?q=${it.latitude},${it.longitude}"
@@ -255,14 +253,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun sendSmsToContacts(contacts: Set<String>, location: String) {
-        val smsManager = getSystemService(SmsManager::class.java)
+        val smsManager = SmsManager.getDefault()
+        val message = "🚨 Emergency Detected!\nUser might be in danger.\nLocation: $location"
 
-        for (contact in contacts) {
-            val message = "🚨 Emergency Detected!\nUser may be in danger.\nLocation: $location"
-            smsManager.sendTextMessage(contact, null, message, null, null)
+        contacts.forEach { number ->
+            try {
+                smsManager.sendTextMessage(number, null, message, null, null)
+            } catch (e: Exception) {
+                Log.e("SMS", "Failed to send to $number", e)
+            }
         }
-        Toast.makeText(this, "🚨 Alert sent to all emergency contacts!", Toast.LENGTH_LONG).show()
+
+        Toast.makeText(this, "🚨 Alerts sent to emergency contacts!", Toast.LENGTH_LONG).show()
     }
 
+    override fun onDestroy() {
+        super.onDestroy()
+        coroutineScope.cancel()
+        yamnet?.close()
+        tflite?.close()
+        dispatcher?.stop()
+        autoSendAlertHandler?.removeCallbacks(autoSendAlertRunnable ?: return)
+    }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, results)
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            if (!hasAllPermissions()) {
+                Toast.makeText(this, "All permissions are required for emergency detection.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
 }

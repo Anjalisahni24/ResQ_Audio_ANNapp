@@ -1,5 +1,7 @@
 <resources>
     <string name="app_name">Emergency Audio Detection</string>
     <string name="contact_1_10_digit_number">Contact 1 (10-digit number)</string>
+    <string name="start_listening">Start Listening</string>
+    <string name="stop_listening">Stop Listening</string>
 
 </resources>

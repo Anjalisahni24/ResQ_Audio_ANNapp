@@ -1,0 +1,37 @@
+Python 3.11
+TensorFlow 2.15.0
+TensorFlow-IO 0.35.0
+Tensorflow-Hub 0.15.0
+OS 
+NumPy
+sklearn
+Keras
+Pydub (AudioSegment)
+Wave
+ffmpeg
+matplotlib
+Librosa
+Soundfile
+pandas
+shutil
+random
+
+##FOR ANDROID APP
+Android SDK
+Minimum SDK Version: API 23 (Android 6.0)
+
+Target SDK Version: Preferably the latest stable Android SDK version
+
+Permissions
+RECORD_AUDIO
+SEND_SMS
+ACCESS_FINE_LOCATION
+
+TensorFlow Lite Models
+yamnet_embedding.tflite
+emergency_audio_model.tflite
+
+Both models must be stored in the app’s assets directory.
+
+Google Play Services
+Required for FusedLocationProviderClient (Google Location Services)
